@@ -1,4 +1,4 @@
-//  Copyright (c) 2013, Facebook, Inc.  All rights reserved.
+//  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
@@ -88,14 +88,6 @@ struct BackupableDBOptions {
   // *turn it on only if you know what you're doing*
   bool share_files_with_checksum;
 
-  // Try to use the file size in file name instead of getting size from HDFS,
-  // if the file is generated with options.share_files_with_checksum = true.
-  // This is a temporary solution to reduce the backupable Db open latency when
-  // There are too many sst files. Will remove the option after we have a
-  // permanent solution.
-  // Default: false
-  bool use_file_size_in_file_name;
-
   // Up to this many background threads will copy files for CreateNewBackup()
   // and RestoreDBFromBackup()
   // Default: 1
@@ -125,7 +117,6 @@ struct BackupableDBOptions {
         backup_rate_limit(_backup_rate_limit),
         restore_rate_limit(_restore_rate_limit),
         share_files_with_checksum(false),
-        use_file_size_in_file_name(false),
         max_background_operations(_max_background_operations),
         callback_trigger_interval_size(_callback_trigger_interval_size) {
     assert(share_table_files || !share_files_with_checksum);
@@ -152,13 +143,17 @@ struct BackupInfo {
   uint64_t size;
 
   uint32_t number_files;
+  std::string app_metadata;
 
   BackupInfo() {}
 
   BackupInfo(BackupID _backup_id, int64_t _timestamp, uint64_t _size,
-             uint32_t _number_files)
-      : backup_id(_backup_id), timestamp(_timestamp), size(_size),
-        number_files(_number_files) {}
+             uint32_t _number_files, const std::string& _app_metadata)
+      : backup_id(_backup_id),
+        timestamp(_timestamp),
+        size(_size),
+        number_files(_number_files),
+        app_metadata(_app_metadata) {}
 };
 
 class BackupStatistics {
@@ -227,9 +222,17 @@ class BackupEngine {
                      const BackupableDBOptions& options,
                      BackupEngine** backup_engine_ptr);
 
-  virtual Status CreateNewBackup(
-      DB* db, bool flush_before_backup = false,
+  /// same as CreateNewBackup, but stores extra application metadata
+  virtual Status CreateNewBackupWithMetadata(
+      DB* db, const std::string& app_metadata, bool flush_before_backup = false,
       std::function<void()> progress_callback = []() {}) = 0;
+
+  virtual Status CreateNewBackup(DB* db, bool flush_before_backup = false,
+                                 std::function<void()> progress_callback =
+                                     []() {}) {
+    return CreateNewBackupWithMetadata(db, "", flush_before_backup,
+                                       progress_callback);
+  }
   virtual Status PurgeOldBackups(uint32_t num_backups_to_keep) = 0;
   virtual Status DeleteBackup(BackupID backup_id) = 0;
   virtual void StopBackup() = 0;

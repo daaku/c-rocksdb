@@ -1,4 +1,4 @@
-// Copyright (c) 2014, Facebook, Inc.  All rights reserved.
+// Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree. An additional grant
 // of patent rights can be found in the PATENTS file in the same directory.
@@ -22,17 +22,17 @@
  * Signature: (Z)J
  */
 jlong Java_org_rocksdb_RestoreOptions_newRestoreOptions(JNIEnv* env,
-    jobject jobj, jboolean keep_log_files) {
+    jclass jcls, jboolean keep_log_files) {
   auto ropt = new rocksdb::RestoreOptions(keep_log_files);
   return reinterpret_cast<jlong>(ropt);
 }
 
 /*
  * Class:     org_rocksdb_RestoreOptions
- * Method:    dispose
+ * Method:    disposeInternal
  * Signature: (J)V
  */
-void Java_org_rocksdb_RestoreOptions_dispose(JNIEnv* env, jobject jobj,
+void Java_org_rocksdb_RestoreOptions_disposeInternal(JNIEnv* env, jobject jobj,
     jlong jhandle) {
   auto ropt = reinterpret_cast<rocksdb::RestoreOptions*>(jhandle);
   assert(ropt);
@@ -45,8 +45,8 @@ void Java_org_rocksdb_RestoreOptions_dispose(JNIEnv* env, jobject jobj,
  * Signature: (J)J
  */
 jlong Java_org_rocksdb_RestoreBackupableDB_newRestoreBackupableDB(JNIEnv* env,
-    jobject jobj, jlong jopt_handle) {
-  auto opt = reinterpret_cast<rocksdb::BackupableDBOptions*>(jopt_handle);
+    jclass jcls, jlong jopt_handle) {
+  auto* opt = reinterpret_cast<rocksdb::BackupableDBOptions*>(jopt_handle);
   auto rdb = new rocksdb::RestoreBackupableDB(rocksdb::Env::Default(), *opt);
   return reinterpret_cast<jlong>(rdb);
 }
@@ -156,21 +156,14 @@ jintArray Java_org_rocksdb_RestoreBackupableDB_getCorruptedBackups(
   reinterpret_cast<rocksdb::RestoreBackupableDB*>(jhandle)->
       GetCorruptedBackups(&backup_ids);
   // store backupids in int array
-  const std::vector<rocksdb::BackupID>::size_type
-        kIdSize = backup_ids.size();
-
-  int int_backup_ids[kIdSize];
-  for (std::vector<rocksdb::BackupID>::size_type i = 0;
-      i != kIdSize; i++) {
-    int_backup_ids[i] = backup_ids[i];
-  }
+  std::vector<jint> int_backup_ids(backup_ids.begin(), backup_ids.end());
   // Store ints in java array
   jintArray ret_backup_ids;
   // Its ok to loose precision here (64->32)
-  jsize ret_backup_ids_size = static_cast<jsize>(kIdSize);
+  jsize ret_backup_ids_size = static_cast<jsize>(backup_ids.size());
   ret_backup_ids = env->NewIntArray(ret_backup_ids_size);
   env->SetIntArrayRegion(ret_backup_ids, 0, ret_backup_ids_size,
-      int_backup_ids);
+      int_backup_ids.data());
   return ret_backup_ids;
 }
 
@@ -192,11 +185,11 @@ void Java_org_rocksdb_RestoreBackupableDB_garbageCollect(
 
 /*
  * Class:     org_rocksdb_RestoreBackupableDB
- * Method:    dispose
+ * Method:    disposeInternal
  * Signature: (J)V
  */
-void Java_org_rocksdb_RestoreBackupableDB_dispose(JNIEnv* env, jobject jobj,
-    jlong jhandle) {
+void Java_org_rocksdb_RestoreBackupableDB_disposeInternal(JNIEnv* env,
+    jobject jobj, jlong jhandle) {
   auto ropt = reinterpret_cast<rocksdb::RestoreBackupableDB*>(jhandle);
   assert(ropt);
   delete ropt;

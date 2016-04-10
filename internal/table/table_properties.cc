@@ -1,4 +1,4 @@
-//  Copyright (c) 2013, Facebook, Inc.  All rights reserved.
+//  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
@@ -75,6 +75,17 @@ std::string TableProperties::ToString(
       filter_policy_name.empty() ? std::string("N/A") : filter_policy_name,
       prop_delim, kv_delim);
 
+  AppendProperty(result, "column family ID",
+                 column_family_id == rocksdb::TablePropertiesCollectorFactory::
+                                         Context::kUnknownColumnFamily
+                     ? std::string("N/A")
+                     : rocksdb::ToString(column_family_id),
+                 prop_delim, kv_delim);
+  AppendProperty(
+      result, "column family name",
+      column_family_name.empty() ? std::string("N/A") : column_family_name,
+      prop_delim, kv_delim);
+
   return result;
 }
 
@@ -108,6 +119,10 @@ const std::string TablePropertiesNames::kFormatVersion =
     "rocksdb.format.version";
 const std::string TablePropertiesNames::kFixedKeyLen =
     "rocksdb.fixed.key.length";
+const std::string TablePropertiesNames::kColumnFamilyId =
+    "rocksdb.column.family.id";
+const std::string TablePropertiesNames::kColumnFamilyName =
+    "rocksdb.column.family.name";
 
 extern const std::string kPropertiesBlock = "rocksdb.properties";
 // Old property block name for backward compatibility

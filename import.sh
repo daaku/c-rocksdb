@@ -2,8 +2,9 @@
 
 set -eu
 
-rm -rf *.cc internal/*
-curl -sL https://github.com/facebook/rocksdb/archive/v4.3.1.tar.gz | tar zxf - -C internal --strip-components=1
+rm -rf *.cc internal
+mkdir internal
+curl -sL https://github.com/daaku/rocksdb/archive/master.tar.gz | tar zxf - -C internal --strip-components=1
 make -C internal util/build_version.cc
 patch -p1 < gitignore.patch
 
@@ -17,4 +18,4 @@ done
 
 # restore the repo to what it would look like when first cloned.
 # comment this line out while updating upstream.
-git clean -dxf
+#git clean -dxf

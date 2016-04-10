@@ -1,4 +1,4 @@
-//  Copyright (c) 2013, Facebook, Inc.  All rights reserved.
+//  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
@@ -230,6 +230,13 @@ DEFINE_int64(cache_size, 2LL * KB * KB * KB,
 DEFINE_uint64(subcompactions, 1,
              "Maximum number of subcompactions to divide L0-L1 compactions "
              "into.");
+
+DEFINE_bool(allow_concurrent_memtable_write, true,
+            "Allow multi-writers to update mem tables in parallel.");
+
+DEFINE_bool(enable_write_thread_adaptive_yield, true,
+            "Use a yielding spin loop for brief writer thread waits.");
+
 static const bool FLAGS_subcompactions_dummy __attribute__((unused)) =
     RegisterFlagValidator(&FLAGS_subcompactions, &ValidateUint32Range);
 
@@ -444,13 +451,13 @@ DEFINE_bool(use_merge, false, "On true, replaces all writes with a Merge "
 namespace rocksdb {
 
 // convert long to a big-endian slice key
-static std::string Key(long val) {
+static std::string Key(int64_t val) {
   std::string little_endian_key;
   std::string big_endian_key;
   PutFixed64(&little_endian_key, val);
   assert(little_endian_key.size() == sizeof(val));
   big_endian_key.resize(sizeof(val));
-  for (int i=0; i<(int)sizeof(val); i++) {
+  for (size_t i = 0 ; i < sizeof(val); ++i) {
     big_endian_key[i] = little_endian_key[sizeof(val) - 1 - i];
   }
   return big_endian_key;
@@ -458,11 +465,7 @@ static std::string Key(long val) {
 
 static std::string StringToHex(const std::string& str) {
   std::string result = "0x";
-  char buf[10];
-  for (size_t i = 0; i < str.length(); i++) {
-    snprintf(buf, 10, "%02X", (unsigned char)str[i]);
-    result += buf;
-  }
+  result.append(Slice(str).ToString(true));
   return result;
 }
 
@@ -472,9 +475,9 @@ namespace {
 
 class Stats {
  private:
-  double start_;
-  double finish_;
-  double seconds_;
+  uint64_t start_;
+  uint64_t finish_;
+  double  seconds_;
   long done_;
   long gets_;
   long prefixes_;
@@ -487,7 +490,7 @@ class Stats {
   long errors_;
   int next_report_;
   size_t bytes_;
-  double last_op_finish_;
+  uint64_t last_op_finish_;
   HistogramImpl hist_;
 
  public:
@@ -538,11 +541,11 @@ class Stats {
 
   void FinishedSingleOp() {
     if (FLAGS_histogram) {
-      double now = FLAGS_env->NowMicros();
-      double micros = now - last_op_finish_;
+      auto now = FLAGS_env->NowMicros();
+      auto micros = now - last_op_finish_;
       hist_.Add(micros);
       if (micros > 20000) {
-        fprintf(stdout, "long op: %.1f micros%30s\r", micros, "");
+        fprintf(stdout, "long op: %" PRIu64 " micros%30s\r", micros, "");
       }
       last_op_finish_ = now;
     }
@@ -676,7 +679,7 @@ class SharedState {
       values_[i] = std::vector<uint32_t>(max_key_, SENTINEL);
     }
 
-    long num_locks = (max_key_ >> log2_keys_per_lock_);
+    long num_locks = static_cast<long>(max_key_ >> log2_keys_per_lock_);
     if (max_key_ & ((1 << log2_keys_per_lock_) - 1)) {
       num_locks++;
     }
@@ -705,7 +708,7 @@ class SharedState {
     return stress_test_;
   }
 
-  long GetMaxKey() const {
+  int64_t GetMaxKey() const {
     return max_key_;
   }
 
@@ -785,21 +788,21 @@ class SharedState {
     std::fill(values_[cf].begin(), values_[cf].end(), SENTINEL);
   }
 
-  void Put(int cf, long key, uint32_t value_base) {
+  void Put(int cf, int64_t key, uint32_t value_base) {
     values_[cf][key] = value_base;
   }
 
-  uint32_t Get(int cf, long key) const { return values_[cf][key]; }
+  uint32_t Get(int cf, int64_t key) const { return values_[cf][key]; }
 
-  void Delete(int cf, long key) { values_[cf][key] = SENTINEL; }
+  void Delete(int cf, int64_t key) { values_[cf][key] = SENTINEL; }
 
-  void SingleDelete(int cf, size_t key) { values_[cf][key] = SENTINEL; }
+  void SingleDelete(int cf, int64_t key) { values_[cf][key] = SENTINEL; }
 
-  bool AllowsOverwrite(int cf, size_t key) {
+  bool AllowsOverwrite(int cf, int64_t key) {
     return no_overwrite_ids_[cf].find(key) == no_overwrite_ids_[cf].end();
   }
 
-  bool Exists(int cf, size_t key) { return values_[cf][key] != SENTINEL; }
+  bool Exists(int cf, int64_t key) { return values_[cf][key] != SENTINEL; }
 
   uint32_t GetSeed() const { return seed_; }
 
@@ -815,7 +818,7 @@ class SharedState {
   port::Mutex mu_;
   port::CondVar cv_;
   const uint32_t seed_;
-  const long max_key_;
+  const int64_t max_key_;
   const uint32_t log2_keys_per_lock_;
   const int num_threads_;
   long num_initialized_;
@@ -1122,9 +1125,9 @@ class StressTest {
         shared.GetCondVar()->Wait();
       }
 
-      double now = FLAGS_env->NowMicros();
+      auto now = FLAGS_env->NowMicros();
       fprintf(stdout, "%s Starting database operations\n",
-              FLAGS_env->TimeToString((uint64_t) now/1000000).c_str());
+              FLAGS_env->TimeToString(now/1000000).c_str());
 
       shared.SetStart();
       shared.GetCondVar()->SignalAll();
@@ -1157,10 +1160,10 @@ class StressTest {
       delete threads[i];
       threads[i] = nullptr;
     }
-    double now = FLAGS_env->NowMicros();
+    auto now = FLAGS_env->NowMicros();
     if (!FLAGS_test_batches_snapshots) {
       fprintf(stdout, "%s Verification successful\n",
-              FLAGS_env->TimeToString((uint64_t) now/1000000).c_str());
+              FLAGS_env->TimeToString(now/1000000).c_str());
     }
     PrintStatistics();
 
@@ -1510,7 +1513,7 @@ class StressTest {
     WriteOptions write_opts;
     auto shared = thread->shared;
     char value[100];
-    long max_key = thread->shared->GetMaxKey();
+    auto max_key = thread->shared->GetMaxKey();
     std::string from_db;
     if (FLAGS_sync) {
       write_opts.sync = true;
@@ -1760,7 +1763,7 @@ class StressTest {
         unique_ptr<Iterator> iter(
             db_->NewIterator(options, column_families_[cf]));
         iter->Seek(Key(start));
-        for (long i = start; i < end; i++) {
+        for (auto i = start; i < end; i++) {
           if (thread->shared->HasVerificationFailedYet()) {
             break;
           }
@@ -1798,7 +1801,7 @@ class StressTest {
         }
       } else {
         // Use Get to verify this range
-        for (long i = start; i < end; i++) {
+        for (auto i = start; i < end; i++) {
           if (thread->shared->HasVerificationFailedYet()) {
             break;
           }
@@ -1818,13 +1821,13 @@ class StressTest {
   }
 
   void VerificationAbort(SharedState* shared, std::string msg, int cf,
-                         long key) const {
-    printf("Verification failed for column family %d key %ld: %s\n", cf, key,
+                         int64_t key) const {
+    printf("Verification failed for column family %d key %" PRIi64 ": %s\n", cf, key,
            msg.c_str());
     shared->SetVerificationFailure();
   }
 
-  bool VerifyValue(int cf, long key, const ReadOptions& opts,
+  bool VerifyValue(int cf, int64_t key, const ReadOptions& opts,
                    SharedState* shared, const std::string& value_from_db,
                    Status s, bool strict = false) const {
     if (shared->HasVerificationFailedYet()) {
@@ -1861,12 +1864,12 @@ class StressTest {
     return true;
   }
 
-  static void PrintKeyValue(int cf, uint32_t key, const char* value,
+  static void PrintKeyValue(int cf, int64_t key, const char* value,
                             size_t sz) {
     if (!FLAGS_verbose) {
       return;
     }
-    fprintf(stdout, "[CF %d] %u ==> (%u) ", cf, key, (unsigned int)sz);
+    fprintf(stdout, "[CF %d] %" PRIi64 " == > (%" ROCKSDB_PRIszt ") ", cf, key, sz);
     for (size_t i = 0; i < sz; i++) {
       fprintf(stdout, "%X", value[i]);
     }
@@ -1997,10 +2000,20 @@ class StressTest {
     options_.filter_deletes = FLAGS_filter_deletes;
     options_.inplace_update_support = FLAGS_in_place_update;
     options_.max_subcompactions = static_cast<uint32_t>(FLAGS_subcompactions);
-    if ((FLAGS_prefix_size == 0) == (FLAGS_rep_factory == kHashSkipList)) {
+    options_.allow_concurrent_memtable_write =
+        FLAGS_allow_concurrent_memtable_write;
+    options_.enable_write_thread_adaptive_yield =
+        FLAGS_enable_write_thread_adaptive_yield;
+
+    if (FLAGS_prefix_size == 0 && FLAGS_rep_factory == kHashSkipList) {
       fprintf(stderr,
-            "prefix_size should be non-zero iff memtablerep == prefix_hash\n");
+              "prefeix_size cannot be zero if memtablerep == prefix_hash\n");
       exit(1);
+    }
+    if (FLAGS_prefix_size != 0 && FLAGS_rep_factory != kHashSkipList) {
+      fprintf(stderr,
+              "WARNING: prefix_size is non-zero but "
+              "memtablerep != prefix_hash\n");
     }
     switch (FLAGS_rep_factory) {
       case kSkipList:
@@ -2127,9 +2140,9 @@ class StressTest {
     db_ = nullptr;
 
     num_times_reopened_++;
-    double now = FLAGS_env->NowMicros();
+    auto now = FLAGS_env->NowMicros();
     fprintf(stdout, "%s Reopening database for the %dth time\n",
-            FLAGS_env->TimeToString((uint64_t) now/1000000).c_str(),
+            FLAGS_env->TimeToString(now/1000000).c_str(),
             num_times_reopened_);
     Open();
   }

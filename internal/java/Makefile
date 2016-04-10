@@ -64,6 +64,7 @@ JAVA_TESTS = org.rocksdb.BackupableDBOptionsTest\
         org.rocksdb.BackupEngineTest\
 	org.rocksdb.BackupableDBTest\
 	org.rocksdb.BlockBasedTableConfigTest\
+        org.rocksdb.util.BytewiseComparatorTest\
 	org.rocksdb.CheckPointTest\
 	org.rocksdb.ColumnFamilyOptionsTest\
 	org.rocksdb.ColumnFamilyTest\
@@ -99,6 +100,7 @@ JAVA_TESTS = org.rocksdb.BackupableDBOptionsTest\
 	org.rocksdb.StatisticsCollectorTest\
 	org.rocksdb.WriteBatchHandlerTest\
 	org.rocksdb.WriteBatchTest\
+        org.rocksdb.WriteBatchThreadedTest\
 	org.rocksdb.WriteOptionsTest\
 	org.rocksdb.WriteBatchWithIndexTest
 

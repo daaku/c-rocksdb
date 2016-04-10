@@ -1,4 +1,4 @@
-//  Copyright (c) 2013, Facebook, Inc.  All rights reserved.
+//  Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
@@ -59,14 +59,7 @@ std::string BlockHandle::ToString(bool hex) const {
   std::string handle_str;
   EncodeTo(&handle_str);
   if (hex) {
-    std::string result;
-    char buf[10];
-    for (size_t i = 0; i < handle_str.size(); i++) {
-      snprintf(buf, sizeof(buf), "%02X",
-               static_cast<unsigned char>(handle_str[i]));
-      result += buf;
-    }
-    return result;
+    return Slice(handle_str).ToString(true);
   } else {
     return handle_str;
   }
